@@ -1,14 +1,18 @@
 import logging
+import json
 from telegram import Update
-from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext, ConversationHandler
+from telegram.ext import (
+    ApplicationBuilder, CommandHandler, MessageHandler, filters,
+    ContextTypes, ConversationHandler
+)
 import firebase_admin
 from firebase_admin import credentials, db
 
 # ======================== ضع بياناتك هنا ========================
-TOKEN = "8572697288:AAHPnY9hu7ktLrmsy1J_i3KWY5OoolOcxvY"  # TOKEN بوتك
+TOKEN = "8572697288:AAHPnY9hu7ktLrmsy1J_i3KWY5OoolOcxvY"  # Token بوتك
 ADMIN_ID = 872300006                                         # ID الأدمن
-FIREBASE_URL = "https://speed-recive-system-default-rtdb.europe-west1.firebasedatabase.app/"  # رابط Firebase
-cred = credentials.Certificate("serviceAccountKey.json")      # ملف الخدمة من Firebase
+FIREBASE_URL = "https://speed-recive-system-default-rtdb.europe-west1.firebasedatabase.app/"
+cred = credentials.Certificate("serviceAccountKey.json")     # ملف Firebase
 # =================================================================
 
 # تهيئة Firebase
@@ -21,7 +25,7 @@ logging.basicConfig(level=logging.INFO)
 AMOUNT, TIME = range(2)
 
 # ================= START =================
-def start(update: Update, context: CallbackContext):
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     user_id = str(user.id)
 
@@ -29,11 +33,11 @@ def start(update: Update, context: CallbackContext):
     pending_ref = db.reference(f'users/pending/{user_id}')
 
     if approved_ref.get():
-        update.message.reply_text("مرحباً بك ✅\nاكتب تحقق لبدء عملية التحقق.")
+        await update.message.reply_text("مرحباً بك ✅\nاكتب تحقق لبدء عملية التحقق.")
         return ConversationHandler.END
 
     if pending_ref.get():
-        update.message.reply_text("طلبك قيد المراجعة ⏳")
+        await update.message.reply_text("طلبك قيد المراجعة ⏳")
         return ConversationHandler.END
 
     pending_ref.set({
@@ -41,30 +45,29 @@ def start(update: Update, context: CallbackContext):
         "username": user.username,
     })
 
-    context.bot.send_message(
+    await context.bot.send_message(
         chat_id=ADMIN_ID,
         text=f"طلب تسجيل جديد\n\nID: {user_id}\nالاسم: {user.first_name}\n\n/approve {user_id}\n/reject {user_id}"
     )
 
-    update.message.reply_text("تم إرسال طلب التسجيل ✅")
+    await update.message.reply_text("تم إرسال طلب التسجيل ✅")
     return ConversationHandler.END
 
 # ================= APPROVE =================
-def approve(update: Update, context: CallbackContext):
+async def approve(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
 
     if len(context.args) == 0:
-        update.message.reply_text("ضع ID المستخدم بعد الأمر")
+        await update.message.reply_text("ضع ID المستخدم بعد الأمر")
         return
 
     user_id = context.args[0]
-
     pending_ref = db.reference(f'users/pending/{user_id}')
     data = pending_ref.get()
 
     if not data:
-        update.message.reply_text("لا يوجد طلب بهذا ID")
+        await update.message.reply_text("لا يوجد طلب بهذا ID")
         return
 
     db.reference(f'users/approved/{user_id}').set({
@@ -77,45 +80,45 @@ def approve(update: Update, context: CallbackContext):
 
     pending_ref.delete()
 
-    context.bot.send_message(chat_id=user_id, text="تم تفعيل حسابك ✅")
-    update.message.reply_text("تم قبول المستخدم")
+    await context.bot.send_message(chat_id=user_id, text="تم تفعيل حسابك ✅")
+    await update.message.reply_text("تم قبول المستخدم")
 
 # ================= REJECT =================
-def reject(update: Update, context: CallbackContext):
+async def reject(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
 
     if len(context.args) == 0:
-        update.message.reply_text("ضع ID المستخدم بعد الأمر")
+        await update.message.reply_text("ضع ID المستخدم بعد الأمر")
         return
 
     user_id = context.args[0]
     db.reference(f'users/pending/{user_id}').delete()
-    update.message.reply_text("تم رفض المستخدم")
+    await update.message.reply_text("تم رفض المستخدم")
 
 # ================= VERIFY =================
-def verify(update: Update, context: CallbackContext):
+async def verify(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
     user_ref = db.reference(f'users/approved/{user_id}')
     user = user_ref.get()
 
     if not user:
-        update.message.reply_text("حسابك غير مفعل.")
+        await update.message.reply_text("حسابك غير مفعل.")
         return ConversationHandler.END
 
     if user["blocked"]:
-        update.message.reply_text("حسابك محظور ❌")
+        await update.message.reply_text("حسابك محظور ❌")
         return ConversationHandler.END
 
-    update.message.reply_text("ادخل مبلغ العملية:")
+    await update.message.reply_text("ادخل مبلغ العملية:")
     return AMOUNT
 
-def get_amount(update: Update, context: CallbackContext):
+async def get_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["amount"] = update.message.text
-    update.message.reply_text("ادخل الوقت (مثال 21:17):")
+    await update.message.reply_text("ادخل الوقت (مثال 21:17):")
     return TIME
 
-def get_time(update: Update, context: CallbackContext):
+async def get_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
     amount = context.user_data["amount"]
     time = update.message.text
@@ -133,53 +136,48 @@ def get_time(update: Update, context: CallbackContext):
 
         if failed >= 3:
             user_ref.update({"blocked": True})
-            update.message.reply_text("تم حظرك بسبب 3 محاولات فاشلة ❌")
+            await update.message.reply_text("تم حظرك بسبب 3 محاولات فاشلة ❌")
         else:
-            update.message.reply_text("عملية غير موجودة ❌")
-
+            await update.message.reply_text("عملية غير موجودة ❌")
         return ConversationHandler.END
 
     if trans["used"]:
-        update.message.reply_text("هذه العملية مستعملة سابقاً ❌")
+        await update.message.reply_text("هذه العملية مستعملة سابقاً ❌")
         return ConversationHandler.END
 
     # نجاح العملية
     new_balance = user["balance"] + int(amount)
-
     user_ref.update({
         "balance": new_balance,
         "failed_attempts": 0
     })
-
     trans_ref.update({
         "used": True,
         "used_by": user_id
     })
 
-    update.message.reply_text(f"تم إضافة {amount} دج بنجاح ✅\nرصيدك الحالي: {new_balance}")
+    await update.message.reply_text(f"تم إضافة {amount} دج بنجاح ✅\nرصيدك الحالي: {new_balance}")
     return ConversationHandler.END
 
 # ================= MAIN =================
 def main():
-    updater = Updater(TOKEN)
-    dp = updater.dispatcher
+    app = ApplicationBuilder().token(TOKEN).build()
 
-    conv = ConversationHandler(
-        entry_points=[MessageHandler(Filters.regex("^تحقق$"), verify)],
+    conv_handler = ConversationHandler(
+        entry_points=[MessageHandler(filters.Regex("^تحقق$"), verify)],
         states={
-            AMOUNT: [MessageHandler(Filters.text & ~Filters.command, get_amount)],
-            TIME: [MessageHandler(Filters.text & ~Filters.command, get_time)],
+            AMOUNT: [MessageHandler(filters.TEXT & (~filters.COMMAND), get_amount)],
+            TIME: [MessageHandler(filters.TEXT & (~filters.COMMAND), get_time)],
         },
         fallbacks=[]
     )
 
-    dp.add_handler(CommandHandler("start", start))
-    dp.add_handler(CommandHandler("approve", approve))
-    dp.add_handler(CommandHandler("reject", reject))
-    dp.add_handler(conv)
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("approve", approve))
+    app.add_handler(CommandHandler("reject", reject))
+    app.add_handler(conv_handler)
 
-    updater.start_polling()
-    updater.idle()
+    app.run_polling()
 
 if __name__ == "__main__":
     main()
